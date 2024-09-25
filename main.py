@@ -1,27 +1,16 @@
 import telebot
 import pandas as pd
 import random
-import time
-import requests
 import numpy as np
-import logging
-from telebot import types
+from datetime import datetime
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
-from datetime import datetime
-import schedule
+from telebot import types
 
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger()
-
-
+# Initialize the bot with your token
 bot = telebot.TeleBot("8149823821:AAHOc4k17ZXwCVfzgInlT95MzLSs0IIcQSg")
 
-
-subscribed_users = set()  
-
-
+# Time windows for 80% accurate signals
 TIME_WINDOWS_80 = [
     ("09:00", "09:30"),
     ("12:00", "12:30"),
@@ -29,7 +18,7 @@ TIME_WINDOWS_80 = [
     ("20:00", "20:30")
 ]
 
-
+# Helper function to check if the current time is within 80% accuracy windows
 def is_time_in_80_window():
     current_time = datetime.now().strftime("%H:%M")
     for start_time, end_time in TIME_WINDOWS_80:
@@ -37,44 +26,44 @@ def is_time_in_80_window():
             return True
     return False
 
-
+# Function to fetch real-time data (placeholder function)
 def fetch_real_time_data():
     return [round(random.uniform(1.0, 5.0), 2) for _ in range(10)]
 
-
+# Function to prepare data for machine learning
 def prepare_data(data):
-    X = np.array(range(len(data))).reshape(-1, 1)  
-    y = np.array(data)  
+    X = np.array(range(len(data))).reshape(-1, 1)  # Round index as feature
+    y = np.array(data)  # Multiplier as target
     return X, y
 
-
+# Function to train a linear regression model
 def train_model(data):
     X, y = prepare_data(data)
     model = LinearRegression()
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     model.fit(X_train, y_train)
-    logger.info("📊 Model trained successfully!")
     return model
 
+# Function to analyze signals using the trained model
 def analyze_signals(data):
     df = pd.DataFrame(data, columns=['multiplier'])
     
-
+    # Generate signals based on prediction
     model = train_model(df['multiplier'])
     
-
-    next_round = np.array([[len(df)]])  
+    # Predict next multiplier
+    next_round = np.array([[len(df)]])  # Predicting for the next round
     predicted_multiplier = model.predict(next_round)[0]
     
-
+    # Set thresholds for betting signals
     average_multiplier = df['multiplier'].mean()
     upper_threshold = average_multiplier + df['multiplier'].std()
     lower_threshold = average_multiplier - df['multiplier'].std()
 
-
+    # Determine signal accuracy based on time
     accuracy = 80 if is_time_in_80_window() else 50
 
-
+    # Generate signals based on thresholds and predicted value
     signal = "📈 Bet! 🚀" if predicted_multiplier > upper_threshold else "🚫 Don't Bet 🚧"
     
     return {
@@ -86,9 +75,9 @@ def analyze_signals(data):
         'accuracy': accuracy
     }
 
-
+# Function to get the latest signal
 def get_latest_signal():
-    real_data = fetch_real_time_data()  
+    real_data = fetch_real_time_data()  # Fetch real data (simulated)
     signals = analyze_signals(real_data)
     return (
         f"📊 **Predicted Multiplier:** {signals['predicted_multiplier']:.2f}\n"
@@ -102,69 +91,20 @@ def get_latest_signal():
 # Telegram bot commands
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
-    bot.reply_to(message, "👋 Welcome to the **Aviator Signal Bot**! 🚀\nType /subscribe to receive live signals.")
+    bot.reply_to(message, "👋 Welcome to the **Aviator Signal Bot**! 🚀\nType /subscribe to get started and receive manual signals.")
 
 @bot.message_handler(commands=["subscribe"])
 def subscribe_user(message):
-    subscribed_users.add(message.chat.id)
-    bot.reply_to(message, "✅ You have **subscribed** to receive signals! 📈")
-
-@bot.message_handler(commands=["unsubscribe"])
-def unsubscribe_user(message):
-    subscribed_users.discard(message.chat.id)
-    bot.reply_to(message, "❌ You have **unsubscribed** from receiving signals.")
-
-@bot.message_handler(commands=["get_signal"])
-def signal_button(message):
     markup = types.InlineKeyboardMarkup()
     signal_button = types.InlineKeyboardButton("🔄 Get Latest Signal", callback_data="get_latest_signal")
     markup.add(signal_button)
-    bot.send_message(message.chat.id, "🔍 Press the button below to get the latest **Aviator** signal:", reply_markup=markup)
+    bot.send_message(message.chat.id, "Press the button below to get the latest **Aviator** signal:", reply_markup=markup)
 
+# Handle the manual button to get the latest signal
 @bot.callback_query_handler(func=lambda call: call.data == "get_latest_signal")
 def callback_query(call):
     signal = get_latest_signal()
     bot.send_message(call.message.chat.id, signal)
-
-
-def broadcast_signal():
-    signal = get_latest_signal()
-    for user_id in subscribed_users:
-        try:
-            bot.send_message(user_id, f"📡 **New Signal Alert**!\n{signal}")
-        except Exception as e:
-            logger.error(f"Error sending message to {user_id}: {e}")
-
-
-def schedule_broadcast():
-    while True:
-        current_time = datetime.now().strftime("%H:%M")
-        
-        # Send 80% signals within defined time windows
-        if is_time_in_80_window():
-            broadcast_signal()
-        
-        # Send 50% signals at other times
-        else:
-            broadcast_signal()
-        
-        time.sleep(60)  # Broadcast every minute
-
-# Schedule time slots for broadcasting signals
-def schedule_signals():
-    # Schedule to broadcast signals in the 80% windows
-    schedule.every().day.at("09:00").until("09:30").do(broadcast_signal)
-    schedule.every().day.at("12:00").until("12:30").do(broadcast_signal)
-    schedule.every().day.at("16:00").until("16:30").do(broadcast_signal)
-    schedule.every().day.at("20:00").until("20:30").do(broadcast_signal)
-    
-    # Schedule for general (50%) signals throughout the day
-    schedule.every().minute.do(broadcast_signal)
-
-# Start the scheduling thread for broadcasting
-import threading
-broadcast_thread = threading.Thread(target=schedule_signals)
-broadcast_thread.start()
 
 # Run the bot
 bot.polling()
