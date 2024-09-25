@@ -86,7 +86,7 @@ def send_welcome(message):
 @bot.message_handler(commands=["subscribe"])
 def subscribe_user(message):
     subscribed_users.add(message.chat.id)
-    bot.reply_to(message, "✅ You have **subscribed** to receive signals! 📈")
+    bot.reply_to(message, "✅ You have **subscribed** to /get_signal receive signals! 📈")
 
 @bot.message_handler(commands=["unsubscribe"])
 def unsubscribe_user(message):
