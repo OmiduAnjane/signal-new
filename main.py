@@ -8,6 +8,8 @@ import logging
 from telebot import types
 from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+import sqlite3
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,47 +18,72 @@ logger = logging.getLogger()
 # Initialize the bot with your token
 bot = telebot.TeleBot("8149823821:AAHOc4k17ZXwCVfzgInlT95MzLSs0IIcQSg")
 
-# Global variable to store subscribed users
-subscribed_users = set()  # A set to hold unique user IDs
+# Set up SQLite for persistent user storage
+conn = sqlite3.connect('subscribed_users.db', check_same_thread=False)
+c = conn.cursor()
 
-# Function to fetch real-time data (placeholder function)
+# Create table to store subscribed users if it doesn't exist
+c.execute('''CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY)''')
+conn.commit()
+
+# Function to add a user to the subscription list
+def add_user(user_id):
+    c.execute('INSERT OR IGNORE INTO users (user_id) VALUES (?)', (user_id,))
+    conn.commit()
+
+# Function to remove a user from the subscription list
+def remove_user(user_id):
+    c.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
+    conn.commit()
+
+# Function to get all subscribed users
+def get_subscribed_users():
+    c.execute('SELECT user_id FROM users')
+    return [row[0] for row in c.fetchall()]
+
+# Function to fetch real-time data (simulated or replace with actual API)
 def fetch_real_time_data():
     # Replace this with the actual API call to fetch real data
     # Here we simulate data for demonstration purposes
-    return [round(random.uniform(1.0, 5.0), 2) for _ in range(10)]
+    return [round(random.uniform(1.0, 5.0), 2) for _ in range(20)]  # Simulating more data points
 
 # Function to prepare data for machine learning
 def prepare_data(data):
-    X = np.array(range(len(data))).reshape(-1, 1)  # Round index as feature
+    X = np.array(range(len(data))).reshape(-1, 1)  # Index as feature
     y = np.array(data)  # Multiplier as target
     return X, y
 
-# Function to train a linear regression model
+# Function to train a more powerful linear regression model
 def train_model(data):
     X, y = prepare_data(data)
     model = LinearRegression()
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     model.fit(X_train, y_train)
-    logger.info("Model trained successfully.")
+    
+    # Evaluate model performance
+    predictions = model.predict(X_test)
+    mse = mean_squared_error(y_test, predictions)
+    logger.info(f"Model trained successfully. MSE: {mse:.4f}")
+    
     return model
 
 # Function to analyze signals using the trained model
 def analyze_signals(data):
     df = pd.DataFrame(data, columns=['multiplier'])
     
-    # Generate signals based on prediction
     model = train_model(df['multiplier'])
     
     # Predict next multiplier
     next_round = np.array([[len(df)]])  # Predicting for the next round
     predicted_multiplier = model.predict(next_round)[0]
     
-    # Set thresholds for betting signals
+    # Calculate thresholds for betting signals
     average_multiplier = df['multiplier'].mean()
-    upper_threshold = average_multiplier + df['multiplier'].std()
-    lower_threshold = average_multiplier - df['multiplier'].std()
+    std_multiplier = df['multiplier'].std()
+    upper_threshold = average_multiplier + std_multiplier
+    lower_threshold = average_multiplier - std_multiplier
 
-    # Generate signals based on thresholds and predicted value
+    # Generate signals based on predicted value
     signal = "Bet" if predicted_multiplier > upper_threshold else "Don't Bet"
     
     return {
@@ -69,7 +96,7 @@ def analyze_signals(data):
 
 # Function to get the latest signal
 def get_latest_signal():
-    real_data = fetch_real_time_data()  # Fetch real data (simulated)
+    real_data = fetch_real_time_data()  # Fetch real data (simulated or real)
     signals = analyze_signals(real_data)
     return (
         f"Predicted Multiplier: {signals['predicted_multiplier']:.2f}\n"
@@ -82,16 +109,16 @@ def get_latest_signal():
 # Telegram bot commands
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
-    bot.reply_to(message, "Welcome to the 1xBet Aviator Signal Bot! Type /subscribe to receive signals.")
+    bot.reply_to(message, "Welcome to the Aviator Signal Bot! Type /subscribe to receive signals.")
 
 @bot.message_handler(commands=["subscribe"])
 def subscribe_user(message):
-    subscribed_users.add(message.chat.id)
+    add_user(message.chat.id)
     bot.reply_to(message, "You have subscribed to receive signals!")
 
 @bot.message_handler(commands=["unsubscribe"])
 def unsubscribe_user(message):
-    subscribed_users.discard(message.chat.id)
+    remove_user(message.chat.id)
     bot.reply_to(message, "You have unsubscribed from receiving signals.")
 
 @bot.message_handler(commands=["get_signal"])
@@ -109,7 +136,8 @@ def callback_query(call):
 # Function to broadcast the latest signal to all subscribed users
 def broadcast_signal():
     signal = get_latest_signal()
-    for user_id in subscribed_users:
+    users = get_subscribed_users()
+    for user_id in users:
         try:
             bot.send_message(user_id, signal)
         except Exception as e:
@@ -119,7 +147,7 @@ def broadcast_signal():
 def schedule_broadcast():
     while True:
         broadcast_signal()
-        time.sleep(60)  # Change this to the desired interval in seconds
+        time.sleep(60)  # Broadcast interval in seconds
 
 # Start a thread for broadcasting signals
 import threading
